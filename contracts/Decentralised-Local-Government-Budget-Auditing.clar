@@ -346,18 +346,36 @@
 (define-constant err-already-paid (err u108))
 (define-constant err-not-verified (err u109))
 
-(define-map budget-balances uint uint)
-(define-map paid-expenditures { budget-id: uint, expenditure-id: uint } bool)
+(define-map budget-balances
+    uint
+    uint
+)
+(define-map paid-expenditures
+    {
+        budget-id: uint,
+        expenditure-id: uint,
+    }
+    bool
+)
 
 (define-read-only (get-budget-balance (budget-id uint))
     (default-to u0 (map-get? budget-balances budget-id))
 )
 
-(define-read-only (is-expenditure-paid (budget-id uint) (expenditure-id uint))
-    (map-get? paid-expenditures { budget-id: budget-id, expenditure-id: expenditure-id })
+(define-read-only (is-expenditure-paid
+        (budget-id uint)
+        (expenditure-id uint)
+    )
+    (map-get? paid-expenditures {
+        budget-id: budget-id,
+        expenditure-id: expenditure-id,
+    })
 )
 
-(define-public (deposit-budget-funds (budget-id uint) (amount uint))
+(define-public (deposit-budget-funds
+        (budget-id uint)
+        (amount uint)
+    )
     (let (
             (budget (unwrap! (map-get? budgets budget-id) err-not-found))
             (recipient (as-contract tx-sender))
@@ -365,14 +383,20 @@
         (asserts! (is-eq (get government-id budget) tx-sender) err-unauthorized)
         (asserts! (is-eq (get status budget) "active") err-invalid-status)
         (asserts! (> amount u0) err-invalid-amount)
-        (unwrap! (stx-transfer? amount tx-sender recipient) err-insufficient-funds)
+        (unwrap! (stx-transfer? amount tx-sender recipient)
+            err-insufficient-funds
+        )
         (let ((current (default-to u0 (map-get? budget-balances budget-id))))
             (ok (map-set budget-balances budget-id (+ current amount)))
         )
     )
 )
 
-(define-public (withdraw-budget-funds (budget-id uint) (amount uint) (recipient principal))
+(define-public (withdraw-budget-funds
+        (budget-id uint)
+        (amount uint)
+        (recipient principal)
+    )
     (let (
             (budget (unwrap! (map-get? budgets budget-id) err-not-found))
             (sender (as-contract tx-sender))
@@ -387,11 +411,25 @@
     )
 )
 
-(define-public (disburse-verified-expenditure (budget-id uint) (expenditure-id uint))
+(define-public (disburse-verified-expenditure
+        (budget-id uint)
+        (expenditure-id uint)
+    )
     (let (
             (budget (unwrap! (map-get? budgets budget-id) err-not-found))
-            (expenditure (unwrap! (map-get? expenditures { budget-id: budget-id, expenditure-id: expenditure-id }) err-not-found))
-            (paid (default-to false (map-get? paid-expenditures { budget-id: budget-id, expenditure-id: expenditure-id })))
+            (expenditure (unwrap!
+                (map-get? expenditures {
+                    budget-id: budget-id,
+                    expenditure-id: expenditure-id,
+                })
+                err-not-found
+            ))
+            (paid (default-to false
+                (map-get? paid-expenditures {
+                    budget-id: budget-id,
+                    expenditure-id: expenditure-id,
+                })
+            ))
             (sender (as-contract tx-sender))
             (current (default-to u0 (map-get? budget-balances budget-id)))
         )
@@ -400,8 +438,18 @@
         (asserts! (is-eq paid false) err-already-paid)
         (asserts! (is-eq (get verified expenditure) true) err-not-verified)
         (asserts! (<= (get amount expenditure) current) err-insufficient-funds)
-        (unwrap! (stx-transfer? (get amount expenditure) sender (get recipient expenditure)) err-insufficient-funds)
-        (map-set paid-expenditures { budget-id: budget-id, expenditure-id: expenditure-id } true)
+        (unwrap!
+            (stx-transfer? (get amount expenditure) sender
+                (get recipient expenditure)
+            )
+            err-insufficient-funds
+        )
+        (map-set paid-expenditures {
+            budget-id: budget-id,
+            expenditure-id: expenditure-id,
+        }
+            true
+        )
         (ok (map-set budget-balances budget-id (- current (get amount expenditure))))
     )
 )
