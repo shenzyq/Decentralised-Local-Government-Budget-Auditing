@@ -343,6 +343,140 @@
     contract-owner
 )
 
+(define-constant err-milestone-not-found (err u110))
+(define-constant err-milestone-locked (err u111))
+(define-constant err-previous-milestone-pending (err u112))
+
+(define-map budget-milestones
+    {
+        budget-id: uint,
+        milestone-id: uint,
+    }
+    {
+        title: (string-ascii 100),
+        target-date: uint,
+        allocated-amount: uint,
+        status: (string-ascii 20),
+        approved-by: (optional principal),
+        approved-at: (optional uint),
+    }
+)
+
+(define-map milestone-counters
+    uint
+    uint
+)
+
+(define-public (create-milestone
+        (budget-id uint)
+        (milestone-id uint)
+        (title (string-ascii 100))
+        (target-date uint)
+        (allocated-amount uint)
+    )
+    (let ((budget (unwrap! (map-get? budgets budget-id) err-not-found)))
+        (asserts! (is-eq (get government-id budget) tx-sender) err-unauthorized)
+        (asserts! (is-eq (get status budget) "draft") err-budget-locked)
+        (asserts! (> allocated-amount u0) err-invalid-amount)
+        (asserts! (> target-date stacks-block-height) err-invalid-amount)
+        (ok (map-set budget-milestones {
+            budget-id: budget-id,
+            milestone-id: milestone-id,
+        } {
+            title: title,
+            target-date: target-date,
+            allocated-amount: allocated-amount,
+            status: "pending",
+            approved-by: none,
+            approved-at: none,
+        }))
+    )
+)
+
+(define-public (approve-milestone
+        (budget-id uint)
+        (milestone-id uint)
+    )
+    (let (
+            (milestone (unwrap!
+                (map-get? budget-milestones {
+                    budget-id: budget-id,
+                    milestone-id: milestone-id,
+                })
+                err-milestone-not-found
+            ))
+            (auditor (unwrap! (map-get? authorized-auditors tx-sender) err-unauthorized))
+        )
+        (asserts! (get active auditor) err-unauthorized)
+        (asserts! (is-eq (get status milestone) "pending") err-milestone-locked)
+        (asserts! (>= stacks-block-height (get target-date milestone))
+            err-invalid-status
+        )
+        (ok (map-set budget-milestones {
+            budget-id: budget-id,
+            milestone-id: milestone-id,
+        }
+            (merge milestone {
+                status: "approved",
+                approved-by: (some tx-sender),
+                approved-at: (some stacks-block-height),
+            })
+        ))
+    )
+)
+
+(define-public (reject-milestone
+        (budget-id uint)
+        (milestone-id uint)
+    )
+    (let (
+            (milestone (unwrap!
+                (map-get? budget-milestones {
+                    budget-id: budget-id,
+                    milestone-id: milestone-id,
+                })
+                err-milestone-not-found
+            ))
+            (auditor (unwrap! (map-get? authorized-auditors tx-sender) err-unauthorized))
+        )
+        (asserts! (get active auditor) err-unauthorized)
+        (asserts! (is-eq (get status milestone) "pending") err-milestone-locked)
+        (ok (map-set budget-milestones {
+            budget-id: budget-id,
+            milestone-id: milestone-id,
+        }
+            (merge milestone {
+                status: "rejected",
+                approved-by: (some tx-sender),
+                approved-at: (some stacks-block-height),
+            })
+        ))
+    )
+)
+
+(define-read-only (get-milestone
+        (budget-id uint)
+        (milestone-id uint)
+    )
+    (map-get? budget-milestones {
+        budget-id: budget-id,
+        milestone-id: milestone-id,
+    })
+)
+
+(define-read-only (is-milestone-approved
+        (budget-id uint)
+        (milestone-id uint)
+    )
+    (match (map-get? budget-milestones {
+        budget-id: budget-id,
+        milestone-id: milestone-id,
+    })
+        milestone (is-eq (get status milestone) "approved")
+        false
+    )
+)
+
 (define-constant err-already-paid (err u108))
 (define-constant err-not-verified (err u109))
 
